@@ -3,16 +3,14 @@ name: Build Omega Pi Stream Binpack
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch:  # Permet déclenchement manuel
+  workflow_dispatch:
 
 jobs:
   build-omega:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     
     steps:
-    - name: Checkout Omega
+    - name: Checkout Omega Repository
       uses: actions/checkout@v4
       with:
         repository: 'Omega-Numworks/Omega'
@@ -24,62 +22,107 @@ jobs:
       with:
         path: 'pi-stream-app'
         
-    - name: Install build dependencies
+    - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential git imagemagick libx11-dev libxext-dev libfreetype6-dev libpng-dev libjpeg-dev pkg-config gcc-arm-none-eabi binutils-arm-none-eabi
+        sudo apt-get install -y \
+          build-essential \
+          git \
+          imagemagick \
+          libx11-dev \
+          libxext-dev \
+          libfreetype6-dev \
+          libpng-dev \
+          libjpeg-dev \
+          pkg-config \
+          gcc-arm-none-eabi \
+          binutils-arm-none-eabi
         
-    - name: Integrate Pi Stream App
+    - name: Verify Files Structure
       run: |
-        # Copier l'app dans Omega
+        echo "=== Pi Stream App Structure ==="
+        ls -la pi-stream-app/
+        echo "=== Omega Structure ==="  
+        ls -la omega/
+        echo "=== Pi Stream App Contents ==="
+        ls -la pi-stream-app/pi_stream_app/ || echo "No pi_stream_app directory"
+        
+    - name: Integrate Pi Stream App into Omega
+      run: |
+        # Copy app to Omega
         cp -r pi-stream-app/pi_stream_app omega/apps/
         
-        # Ajouter à la configuration
+        # Verify copy
+        ls -la omega/apps/pi_stream_app/
+        
+        # Add to build config
         echo "EPSILON_APPS += apps/pi_stream_app" >> omega/build/config.mak
         
-        # Copier les icônes dans tous les thèmes
+        # Verify config
+        echo "=== Config added ==="
+        tail omega/build/config.mak
+        
+        # Create theme directories
         mkdir -p omega/themes/themes/local/omega_light/apps/
         mkdir -p omega/themes/themes/local/omega_dark/apps/
-        mkdir -p omega/themes/themes/local/epsilon_light/apps/
+        mkdir -p omega/themes/themes/local/epsilon_light/apps/  
         mkdir -p omega/themes/themes/local/epsilon_dark/apps/
         
-        cp pi-stream-app/pi_stream_app/pi_stream_icon.png omega/themes/themes/local/omega_light/apps/
-        cp pi-stream-app/pi_stream_app/pi_stream_icon.png omega/themes/themes/local/omega_dark/apps/
-        cp pi-stream-app/pi_stream_app/pi_stream_icon.png omega/themes/themes/local/epsilon_light/apps/
-        cp pi-stream-app/pi_stream_app/pi_stream_icon.png omega/themes/themes/local/epsilon_dark/apps/
+        # Copy icons
+        if [ -f "pi-stream-app/pi_stream_app/pi_stream_icon.png" ]; then
+          cp pi-stream-app/pi_stream_app/pi_stream_icon.png omega/themes/themes/local/omega_light/apps/
+          cp pi-stream-app/pi_stream_app/pi_stream_icon.png omega/themes/themes/local/omega_dark/apps/
+          cp pi-stream-app/pi_stream_app/pi_stream_icon.png omega/themes/themes/local/epsilon_light/apps/
+          cp pi-stream-app/pi_stream_app/pi_stream_icon.png omega/themes/themes/local/epsilon_dark/apps/
+          echo "Icons copied successfully"
+        else
+          echo "Icon file not found, continuing without icons"
+        fi
         
-    - name: Build Omega with Pi Stream
+    - name: Build Omega
       run: |
         cd omega
+        echo "=== Starting Clean Build ==="
         make clean
+        echo "=== Building Omega with Pi Stream ==="
         make OMEGA_USERNAME="PiStream" binpack -j$(nproc)
+        echo "=== Build Complete ==="
+        ls -la output/device/n0110/release/
         
-    - name: Upload Binpack
+    - name: Upload Binpack Artifact
       uses: actions/upload-artifact@v4
+      if: always()
       with:
         name: omega-pi-stream-binpack
-        path: omega/output/device/n0110/release/binpack.bin
+        path: |
+          omega/output/device/n0110/release/binpack.bin
+          omega/output/device/n0110/release/*.hex
+          omega/output/device/n0110/release/*.elf
+        retention-days: 30
         
-    - name: Create Release on Success
-      if: github.ref == 'refs/heads/main'
+    - name: Create Release
+      if: success() && github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: "build-${{ github.run_number }}"
-        name: "Omega Pi Stream Build ${{ github.run_number }}"
+        tag_name: "v1.0.${{ github.run_number }}"
+        name: "Omega Pi Stream v1.0.${{ github.run_number }}"
         body: |
-          🧮 **Omega Pi Stream Binpack**
+          # 🧮 Omega Pi Stream Binpack
           
-          📱 **Installation WebDFU:**
-          1. NumWorks en mode DFU: RESET + 6 + USB
-          2. WebDFU: https://ti-planet.github.io/webdfu_numworks/n0110/
-          3. Upload ce binpack.bin
+          **Ready for WebDFU Flash!**
           
-          🚀 **Fonctionnalités:**
-          - Communication UART temps réel avec Raspberry Pi
-          - Rendu LaTeX mathématique
-          - Interface scrollable
+          ## 📱 Installation:
+          1. **DFU Mode**: NumWorks RESET + 6 + USB
+          2. **WebDFU**: https://ti-planet.github.io/webdfu_numworks/n0110/
+          3. **Upload**: binpack.bin from this release
           
-          ⚡ Build automatique #${{ github.run_number }}
+          ## 🚀 Features:
+          - 📡 Real-time UART communication with Raspberry Pi
+          - 📐 LaTeX math rendering on calculator display
+          - 📜 Scrollable interface for continuous data
+          - 🎨 Integrated app icon
+          
+          Build #${{ github.run_number }} - Automatic compilation
         files: |
           omega/output/device/n0110/release/binpack.bin
       env:
